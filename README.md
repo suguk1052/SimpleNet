@@ -73,8 +73,9 @@ The dataset folders/files follow its original structure.
 Set `datapath` and `datasets` in `run.sh` before running so they match your
 custom dataset layout. The script now defaults to the custom directory structure
 without ground-truth masks (with `datapath=data` and `datasets=('custom')` for
-`data/custom/...`); switch the path and class list if you want to run on MVTecAD
-instead.
+`data/custom/...`) and uses `resize/imagesize=128` to match a 128x128 custom
+dataset; switch the path, class list, or image sizes if you want to run on
+MVTecAD instead.
 ```
 bash run.sh
 ```

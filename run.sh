@@ -31,5 +31,5 @@ net \
 --pre_proj 1 \
 dataset \
 --batch_size 8 \
---resize 329 \
---imagesize 288 "${dataset_flags[@]}" mvtec $datapath
+--resize 128 \
+--imagesize 128 "${dataset_flags[@]}" mvtec $datapath
