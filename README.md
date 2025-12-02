@@ -51,6 +51,24 @@ Please specicy dataset path (line1) and log folder (line10) in `run.sh` before r
 bash run.sh
 ```
 
+#### Inference only (using a trained checkpoint)
+
+Use the `infer` subcommand to load a saved checkpoint and evaluate the test split without running training. Point `--checkpoint_dir` to the folder that contains `models.ckpt` (created during training), and pass the same `net`/`dataset` settings you used for training so the model and dataloader are rebuilt correctly. For example:
+
+```
+python3 main.py \
+  --gpu 0 \
+  --results_path results \
+  --log_group simplenet_mvtec \
+  --log_project MVTecAD_Results \
+  --run_name run \
+  net -b wideresnet50 -le layer2 -le layer3 --pretrain_embed_dimension 1536 --target_embed_dimension 1536 --patchsize 3 --meta_epochs 40 --embedding_size 256 --gan_epochs 4 --noise_std 0.015 --dsc_hidden 1024 --dsc_layers 2 --dsc_margin .5 --pre_proj 1 \
+  dataset --batch_size 8 --resize 329 --imagesize 288 -d bottle mvtec /data4/MVTec_ad \
+  infer --checkpoint_dir results/MVTecAD_Results/simplenet_mvtec/run/models/0/mvtec_bottle
+```
+
+The command will report AUROC/PRO metrics along with FPS for the restored model, and optionally saves segmentation images if `--save_segmentation_images` is provided.
+
 ## Citation
 ```
 @inproceedings{liu2023simplenet,
