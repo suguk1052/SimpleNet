@@ -69,6 +69,12 @@ python3 main.py \
 
 The command will report AUROC/PRO metrics along with FPS for the restored model, and optionally saves segmentation images if `--save_segmentation_images` is provided.
 
+For the custom dataset setup described above, you can also run inference with the provided `inference.sh` wrapper after updating `datapath` and `checkpoint_dir` to your environment:
+
+```
+bash inference.sh
+```
+
 ## Citation
 ```
 @inproceedings{liu2023simplenet,
