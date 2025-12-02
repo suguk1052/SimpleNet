@@ -22,7 +22,7 @@ datasets=(
 dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '"${dataset}"; done))
 
 # Checkpoint to load for inference
-checkpoint_dir=results/CustomAD/simplenet_custom/run/models/0/mvtec_custom
+checkpoint_dir=results/CustomAD/simplenet_custom/run/models/0/custom_custom
 
 # Inference command
 # ---------------------------------------------------------------------------
@@ -51,5 +51,5 @@ net \
 dataset \
 --batch_size 8 \
 --resize 128 \
---imagesize 128 "${dataset_flags[@]}" mvtec "$datapath" \
+--imagesize 128 "${dataset_flags[@]}" custom "$datapath" \
 infer --checkpoint_dir "$checkpoint_dir"
