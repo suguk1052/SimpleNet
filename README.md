@@ -54,11 +54,11 @@ Notes:
   be reported normally.
 
 Update `run.sh` to point to your custom data folder and classname. Replace the
-default MVTec setup by setting `datapath` to your dataset root (for example,
-`data/custom`) and listing each class folder inside the `datasets` array in
-`run.sh` (for instance, `datasets=('custom')` for a single class). The script
-builds the appropriate flags automatically and runs SimpleNet with the custom
-layout.
+default MVTec setup by setting `datapath` to the parent folder that contains
+your class subfolders (for example, `data` when using `data/custom`) and
+listing each class folder inside the `datasets` array in `run.sh` (for
+instance, `datasets=('custom')` for a single class). The script builds the
+appropriate flags automatically and runs SimpleNet with the custom layout.
 
 #### MvTecAD
 
@@ -72,8 +72,9 @@ The dataset folders/files follow its original structure.
 
 Set `datapath` and `datasets` in `run.sh` before running so they match your
 custom dataset layout. The script now defaults to the custom directory structure
-without ground-truth masks; switch the path and class list if you want to run on
-MVTecAD instead.
+without ground-truth masks (with `datapath=data` and `datasets=('custom')` for
+`data/custom/...`); switch the path and class list if you want to run on MVTecAD
+instead.
 ```
 bash run.sh
 ```
