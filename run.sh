@@ -1,7 +1,7 @@
 # Default configuration for a custom dataset without ground-truth masks.
 # Update datapath to point to the parent folder that contains your class
 # subfolders (e.g., keeping the default `data` when using `data/custom`).
-datapath=data
+datapath=/mnt/d/04_KNL/data
 datasets=(
   'custom'
 )
