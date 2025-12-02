@@ -1,12 +1,17 @@
-datapath=/data4/MVTec_ad
-datasets=('screw' 'pill' 'capsule' 'carpet' 'grid' 'tile' 'wood' 'zipper' 'cable' 'toothbrush' 'transistor' 'metal_nut' 'bottle' 'hazelnut' 'leather')
+# Default configuration for a custom dataset without ground-truth masks.
+# Update datapath to point to the parent folder that contains your class
+# subfolders (e.g., keeping the default `data` when using `data/custom`).
+datapath=data
+datasets=(
+  'custom'
+)
 dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '"${dataset}"; done))
 
 python3 main.py \
---gpu 4 \
+--gpu 0 \
 --seed 0 \
---log_group simplenet_mvtec \
---log_project MVTecAD_Results \
+--log_group simplenet_custom \
+--log_project CustomAD \
 --results_path results \
 --run_name run \
 net \
@@ -26,5 +31,5 @@ net \
 --pre_proj 1 \
 dataset \
 --batch_size 8 \
---resize 329 \
---imagesize 288 "${dataset_flags[@]}" mvtec $datapath
+--resize 128 \
+--imagesize 128 "${dataset_flags[@]}" mvtec $datapath
