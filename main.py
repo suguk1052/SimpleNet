@@ -64,6 +64,7 @@ def run(
     device = utils.set_torch_device(gpu)
 
     result_collect = []
+    inference_config = methods.get("inference")
     for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
         LOGGER.info(
             "Evaluating dataset [{}] ({}/{})...".format(
@@ -82,6 +83,40 @@ def run(
 
         models_dir = os.path.join(run_save_path, "models")
         os.makedirs(models_dir, exist_ok=True)
+
+        if inference_config:
+            dataset_checkpoint_dir = inference_config["checkpoint_dir"]
+            dataset_name = dataloaders["testing"].name
+            for i, SimpleNet in enumerate(simplenet_list):
+                LOGGER.info(
+                    "Running inference for model ({}/{})".format(
+                        i + 1, len(simplenet_list)
+                    )
+                )
+                SimpleNet.set_model_dir(
+                    os.path.dirname(dataset_checkpoint_dir),
+                    os.path.basename(dataset_checkpoint_dir),
+                )
+                i_auroc, p_auroc, pro_auroc, fps = SimpleNet.infer(
+                    dataloaders["testing"],
+                    inference_config["save_segmentation_images"],
+                )
+
+                result_collect.append(
+                    {
+                        "dataset_name": dataset_name,
+                        "instance_auroc": i_auroc,
+                        "full_pixel_auroc": p_auroc,
+                        "anomaly_pixel_auroc": pro_auroc,
+                        "fps": fps,
+                    }
+                )
+
+                for key, item in result_collect[-1].items():
+                    if key != "dataset_name":
+                        LOGGER.info("{0}: {1:3.3f}".format(key, item))
+
+            continue
         for i, SimpleNet in enumerate(simplenet_list):
             # torch.cuda.empty_cache()
             if SimpleNet.backbone.seed is not None:
@@ -93,7 +128,9 @@ def run(
 
             SimpleNet.set_model_dir(os.path.join(models_dir, f"{i}"), dataset_name)
             if not test:
-                i_auroc, p_auroc, pro_auroc = SimpleNet.train(dataloaders["training"], dataloaders["testing"])
+                i_auroc, p_auroc, pro_auroc = SimpleNet.train(
+                    dataloaders["training"], dataloaders["testing"]
+                )
             else:
                 # BUG: the following line is not using. Set test with True by default.
                 # i_auroc, p_auroc, pro_auroc =  SimpleNet.test(dataloaders["training"], dataloaders["testing"], save_segmentation_images)
@@ -352,6 +389,26 @@ def dataset(
         return dataloaders
 
     return ("get_dataloaders", get_dataloaders)
+
+
+@main.command("infer")
+@click.option(
+    "--checkpoint_dir",
+    type=click.Path(exists=True, file_okay=False),
+    required=True,
+    help="Directory containing models.ckpt for the trained model.",
+)
+@click.option(
+    "--save_segmentation_images", is_flag=True, default=False, show_default=True
+)
+def infer(checkpoint_dir, save_segmentation_images):
+    return (
+        "inference",
+        {
+            "checkpoint_dir": checkpoint_dir,
+            "save_segmentation_images": save_segmentation_images,
+        },
+    )
 
 
 if __name__ == "__main__":
