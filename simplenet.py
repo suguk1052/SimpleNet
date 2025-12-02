@@ -626,8 +626,18 @@ class SimpleNet(torch.nn.Module):
             for data in data_iterator:
                 if isinstance(data, dict):
                     labels_gt.extend(data["is_anomaly"].numpy().tolist())
-                    if data.get("mask", None) is not None:
-                        masks_gt.extend(data["mask"].numpy().tolist())
+
+                    has_mask = data.get("has_mask")
+                    mask_batch = data.get("mask")
+                    if mask_batch is not None:
+                        if has_mask is not None:
+                            has_mask = has_mask.numpy().tolist()
+                            for mask, valid in zip(mask_batch, has_mask):
+                                if valid:
+                                    masks_gt.append(mask.numpy())
+                        else:
+                            masks_gt.extend(mask_batch.numpy().tolist())
+
                     image = data["image"]
                     img_paths.extend(data['image_path'])
                     total_images += image.shape[0]
