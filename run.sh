@@ -1,12 +1,17 @@
-datapath=/data4/MVTec_ad
-datasets=('screw' 'pill' 'capsule' 'carpet' 'grid' 'tile' 'wood' 'zipper' 'cable' 'toothbrush' 'transistor' 'metal_nut' 'bottle' 'hazelnut' 'leather')
+# Default configuration for a custom dataset without ground-truth masks.
+# Update datapath to point to your dataset root (e.g., data/custom) and set the
+# datasets array to the class folder names under that root.
+datapath=data/custom
+datasets=(
+  'custom'
+)
 dataset_flags=($(for dataset in "${datasets[@]}"; do echo '-d '"${dataset}"; done))
 
 python3 main.py \
 --gpu 4 \
 --seed 0 \
---log_group simplenet_mvtec \
---log_project MVTecAD_Results \
+--log_group simplenet_custom \
+--log_project CustomAD \
 --results_path results \
 --run_name run \
 net \

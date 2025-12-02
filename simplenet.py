@@ -353,7 +353,15 @@ class SimpleNet(torch.nn.Module):
             scores, labels_gt 
         )["auroc"]
 
-        if len(masks_gt) > 0:
+        valid_masks = [mask for mask in masks_gt if mask is not None]
+        if len(valid_masks) > 0:
+            mask_sums = [np.sum(mask) for mask in valid_masks]
+        else:
+            mask_sums = []
+
+        has_pixel_gt = len(valid_masks) > 0 and any(sum_val > 0 for sum_val in mask_sums)
+
+        if has_pixel_gt:
             segmentations = np.array(segmentations)
             min_scores = (
                 segmentations.reshape(len(segmentations), -1)
@@ -377,10 +385,10 @@ class SimpleNet(torch.nn.Module):
                 # segmentations, masks_gt
             full_pixel_auroc = pixel_scores["auroc"]
 
-            pro = metrics.compute_pro(np.squeeze(np.array(masks_gt)), 
+            pro = metrics.compute_pro(np.squeeze(np.array(masks_gt)),
                                             norm_segmentations)
         else:
-            full_pixel_auroc = -1 
+            full_pixel_auroc = -1
             pro = -1
 
         return auroc, full_pixel_auroc, pro

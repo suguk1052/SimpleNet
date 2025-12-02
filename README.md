@@ -34,6 +34,32 @@ SimpleNet is a simple defect detection and localization network that built with 
 
 Edit `run.sh` to edit dataset class and dataset path.
 
+#### Custom dataset without ground-truth masks
+
+SimpleNet now supports training and evaluation on datasets that only provide images.
+Use the following directory layout:
+
+```
+data/custom/train/good/*.jpg
+data/custom/test/good/*.jpg
+data/custom/test/bad/*.jpg
+```
+
+Notes:
+- The `ground_truth` directory is optional; segmentation masks are not required.
+- Good images in the test split will automatically receive a zero mask during
+  evaluation, so alignment errors will not occur even without GT files.
+- Because pixel-level metrics depend on masks, they are disabled when no masks
+  are present or all provided masks are empty. Instance-level AUROC continues to
+  be reported normally.
+
+Update `run.sh` to point to your custom data folder and classname. Replace the
+default MVTec setup by setting `datapath` to your dataset root (for example,
+`data/custom`) and listing each class folder inside the `datasets` array in
+`run.sh` (for instance, `datasets=('custom')` for a single class). The script
+builds the appropriate flags automatically and runs SimpleNet with the custom
+layout.
+
 #### MvTecAD
 
 Download the dataset from [here](https://www.mvtec.com/company/research/datasets/mvtec-ad/).
@@ -44,9 +70,10 @@ The dataset folders/files follow its original structure.
 
 #### Demo train
 
-Please specicy dataset path (line1) and log folder (line10) in `run.sh` before running.
-
-`run.sh` gives the configuration to train models on MVTecAD dataset.
+Set `datapath` and `datasets` in `run.sh` before running so they match your
+custom dataset layout. The script now defaults to the custom directory structure
+without ground-truth masks; switch the path and class list if you want to run on
+MVTecAD instead.
 ```
 bash run.sh
 ```
