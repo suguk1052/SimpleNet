@@ -9,6 +9,7 @@
 import logging
 import os
 import pickle
+import time
 from collections import OrderedDict
 
 import math
@@ -286,18 +287,30 @@ class SimpleNet(torch.nn.Module):
         return features, patch_shapes
 
     
+    def _load_model_checkpoint(self, ckpt_path):
+
+        if not os.path.exists(ckpt_path):
+            return None
+
+        checkpoint = torch.load(ckpt_path, map_location=self.device)
+        if "model_state_dict" in checkpoint:
+            self.load_state_dict(checkpoint["model_state_dict"], strict=False)
+            return checkpoint.get("best_record")
+
+        if "pretrained_enc" in checkpoint:
+            self.feature_enc.load_state_dict(checkpoint["pretrained_enc"])
+        if "pretrained_dec" in checkpoint:
+            self.feature_dec.load_state_dict(checkpoint["pretrained_dec"])
+
+        return None
+
     def test(self, training_data, test_data, save_segmentation_images):
 
         ckpt_path = os.path.join(self.ckpt_dir, "models.ckpt")
-        if os.path.exists(ckpt_path):
-            state_dicts = torch.load(ckpt_path, map_location=self.device)
-            if "pretrained_enc" in state_dicts:
-                self.feature_enc.load_state_dict(state_dicts["pretrained_enc"])
-            if "pretrained_dec" in state_dicts:
-                self.feature_dec.load_state_dict(state_dicts["pretrained_dec"])
+        self._load_model_checkpoint(ckpt_path)
 
         aggregator = {"scores": [], "segmentations": [], "features": []}
-        scores, segmentations, features, labels_gt, masks_gt = self.predict(test_data)
+        scores, segmentations, features, labels_gt, masks_gt, _ = self.predict(test_data)
         aggregator["scores"].append(scores)
         aggregator["segmentations"].append(segmentations)
         aggregator["features"].append(features)
@@ -340,6 +353,24 @@ class SimpleNet(torch.nn.Module):
         full_pixel_auroc = pixel_scores["auroc"]
 
         return auroc, full_pixel_auroc
+
+    def infer(self, test_data, save_segmentation_images=False):
+
+        ckpt_path = os.path.join(self.ckpt_dir, "models.ckpt")
+        self._load_model_checkpoint(ckpt_path)
+
+        scores, segmentations, features, labels_gt, masks_gt, fps = self.predict(
+            test_data
+        )
+
+        if save_segmentation_images:
+            self.save_segmentation_images(test_data, segmentations, scores)
+
+        auroc, full_pixel_auroc, anomaly_pixel_auroc = self._evaluate(
+            test_data, scores, segmentations, features, labels_gt, masks_gt
+        )
+
+        return auroc, full_pixel_auroc, anomaly_pixel_auroc, fps
     
     def _evaluate(self, test_data, scores, segmentations, features, labels_gt, masks_gt):
         
@@ -386,70 +417,96 @@ class SimpleNet(torch.nn.Module):
         return auroc, full_pixel_auroc, pro
         
     
+    def _save_checkpoint(self, path, epoch, best_record):
+
+        state_dict = OrderedDict({k: v.detach().cpu() for k, v in self.state_dict().items()})
+        checkpoint = {
+            "epoch": epoch,
+            "model_state_dict": state_dict,
+            "best_record": best_record,
+            "dsc_opt_state": self.dsc_opt.state_dict(),
+            "dsc_schl_state": self.dsc_schl.state_dict(),
+        }
+
+        if self.pre_proj > 0:
+            checkpoint["pre_projection_state"] = OrderedDict(
+                {k: v.detach().cpu() for k, v in self.pre_projection.state_dict().items()}
+            )
+            checkpoint["proj_opt_state"] = self.proj_opt.state_dict()
+
+        torch.save(checkpoint, path)
+
     def train(self, training_data, test_data):
 
-        
-        state_dict = {}
         ckpt_path = os.path.join(self.ckpt_dir, "ckpt.pth")
-        if os.path.exists(ckpt_path):
-            state_dict = torch.load(ckpt_path, map_location=self.device)
-            if 'discriminator' in state_dict:
-                self.discriminator.load_state_dict(state_dict['discriminator'])
-                if "pre_projection" in state_dict:
-                    self.pre_projection.load_state_dict(state_dict["pre_projection"])
-            else:
-                self.load_state_dict(state_dict, strict=False)
+        best_ckpt_path = os.path.join(self.ckpt_dir, "models.ckpt")
 
-            self.predict(training_data, "train_")
-            scores, segmentations, features, labels_gt, masks_gt = self.predict(test_data)
-            auroc, full_pixel_auroc, anomaly_pixel_auroc = self._evaluate(test_data, scores, segmentations, features, labels_gt, masks_gt)
-            
-            return auroc, full_pixel_auroc, anomaly_pixel_auroc
-        
-        def update_state_dict(d):
-            
-            state_dict["discriminator"] = OrderedDict({
-                k:v.detach().cpu() 
-                for k, v in self.discriminator.state_dict().items()})
-            if self.pre_proj > 0:
-                state_dict["pre_projection"] = OrderedDict({
-                    k:v.detach().cpu() 
-                    for k, v in self.pre_projection.state_dict().items()})
-
+        start_epoch = 0
         best_record = None
-        for i_mepoch in range(self.meta_epochs):
 
+        if os.path.exists(ckpt_path):
+            LOGGER.info(f"Resuming training from checkpoint: {ckpt_path}")
+            checkpoint = torch.load(ckpt_path, map_location=self.device)
+            if "model_state_dict" in checkpoint:
+                self.load_state_dict(checkpoint["model_state_dict"], strict=False)
+            if "dsc_opt_state" in checkpoint:
+                self.dsc_opt.load_state_dict(checkpoint["dsc_opt_state"])
+            if "dsc_schl_state" in checkpoint:
+                self.dsc_schl.load_state_dict(checkpoint["dsc_schl_state"])
+            if self.pre_proj > 0:
+                if "pre_projection_state" in checkpoint:
+                    self.pre_projection.load_state_dict(checkpoint["pre_projection_state"])
+                if "proj_opt_state" in checkpoint:
+                    self.proj_opt.load_state_dict(checkpoint["proj_opt_state"])
+            best_record = checkpoint.get("best_record")
+            start_epoch = checkpoint.get("epoch", 0)
+        elif os.path.exists(best_ckpt_path):
+            LOGGER.info(f"Found existing best checkpoint: {best_ckpt_path}")
+            best_record = self._load_model_checkpoint(best_ckpt_path)
+
+        def _is_better(current, best):
+            if best is None:
+                return True
+            if current[0] > best[0]:
+                return True
+            if current[0] == best[0] and current[1] > best[1]:
+                return True
+            return False
+
+        # If training has already completed, return stored best metrics if available.
+        if start_epoch >= self.meta_epochs:
+            if best_record is not None:
+                return tuple(best_record)
+            scores, segmentations, features, labels_gt, masks_gt, _ = self.predict(test_data)
+            best_record = self._evaluate(test_data, scores, segmentations, features, labels_gt, masks_gt)
+            return best_record
+
+        for i_mepoch in range(start_epoch, self.meta_epochs):
             self._train_discriminator(training_data)
 
-            # torch.cuda.empty_cache()
-            scores, segmentations, features, labels_gt, masks_gt = self.predict(test_data)
-            auroc, full_pixel_auroc, pro = self._evaluate(test_data, scores, segmentations, features, labels_gt, masks_gt)
+            scores, segmentations, features, labels_gt, masks_gt, _ = self.predict(test_data)
+            auroc, full_pixel_auroc, pro = self._evaluate(
+                test_data, scores, segmentations, features, labels_gt, masks_gt
+            )
+
             self.logger.logger.add_scalar("i-auroc", auroc, i_mepoch)
             self.logger.logger.add_scalar("p-auroc", full_pixel_auroc, i_mepoch)
             self.logger.logger.add_scalar("pro", pro, i_mepoch)
 
-            if best_record is None:
-                best_record = [auroc, full_pixel_auroc, pro]
-                update_state_dict(state_dict)
-                # state_dict = OrderedDict({k:v.detach().cpu() for k, v in self.state_dict().items()})
-            else:
-                if auroc > best_record[0]:
-                    best_record = [auroc, full_pixel_auroc, pro]
-                    update_state_dict(state_dict)
-                    # state_dict = OrderedDict({k:v.detach().cpu() for k, v in self.state_dict().items()})
-                elif auroc == best_record[0] and full_pixel_auroc > best_record[1]:
-                    best_record[1] = full_pixel_auroc
-                    best_record[2] = pro 
-                    update_state_dict(state_dict)
-                    # state_dict = OrderedDict({k:v.detach().cpu() for k, v in self.state_dict().items()})
+            current_record = [auroc, full_pixel_auroc, pro]
+            if _is_better(current_record, best_record):
+                best_record = current_record
+                self._save_checkpoint(best_ckpt_path, i_mepoch, best_record)
 
-            print(f"----- {i_mepoch} I-AUROC:{round(auroc, 4)}(MAX:{round(best_record[0], 4)})"
-                  f"  P-AUROC{round(full_pixel_auroc, 4)}(MAX:{round(best_record[1], 4)}) -----"
-                  f"  PRO-AUROC{round(pro, 4)}(MAX:{round(best_record[2], 4)}) -----")
-        
-        torch.save(state_dict, ckpt_path)
-        
-        return best_record
+            self._save_checkpoint(ckpt_path, i_mepoch + 1, best_record)
+
+            print(
+                f"----- {i_mepoch} I-AUROC:{round(auroc, 4)}(MAX:{round(best_record[0], 4)})"
+                f"  P-AUROC{round(full_pixel_auroc, 4)}(MAX:{round(best_record[1], 4)}) -----"
+                f"  PRO-AUROC{round(pro, 4)}(MAX:{round(best_record[2], 4)}) -----"
+            )
+
+        return tuple(best_record)
             
 
     def _train_discriminator(self, input_data):
@@ -543,7 +600,8 @@ class SimpleNet(torch.nn.Module):
     def predict(self, data, prefix=""):
         if isinstance(data, torch.utils.data.DataLoader):
             return self._predict_dataloader(data, prefix)
-        return self._predict(data)
+        scores, masks, features = self._predict(data)
+        return scores, masks, features, [], [], None
 
     def _predict_dataloader(self, dataloader, prefix):
         """This function provides anomaly scores/maps for full dataloaders."""
@@ -558,6 +616,12 @@ class SimpleNet(torch.nn.Module):
         masks_gt = []
         from sklearn.manifold import TSNE
 
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        start_time = time.time()
+
+        total_images = 0
+
         with tqdm.tqdm(dataloader, desc="Inferring...", leave=False) as data_iterator:
             for data in data_iterator:
                 if isinstance(data, dict):
@@ -566,12 +630,18 @@ class SimpleNet(torch.nn.Module):
                         masks_gt.extend(data["mask"].numpy().tolist())
                     image = data["image"]
                     img_paths.extend(data['image_path'])
+                    total_images += image.shape[0]
                 _scores, _masks, _feats = self._predict(image)
                 for score, mask, feat, is_anomaly in zip(_scores, _masks, _feats, data["is_anomaly"].numpy().tolist()):
                     scores.append(score)
                     masks.append(mask)
 
-        return scores, masks, features, labels_gt, masks_gt
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        elapsed = time.time() - start_time
+        fps = total_images / elapsed if elapsed > 0 else 0
+
+        return scores, masks, features, labels_gt, masks_gt, fps
 
     def _predict(self, images):
         """Infer score and mask for a batch of images."""
