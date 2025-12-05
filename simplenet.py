@@ -11,6 +11,7 @@ import os
 import pickle
 import time
 from collections import OrderedDict
+import contextlib
 
 import math
 import numpy as np
@@ -671,30 +672,35 @@ class SimpleNet(torch.nn.Module):
         if self.pre_proj > 0:
             self.pre_projection.eval()
         self.discriminator.eval()
+        use_autocast = torch.cuda.is_available() and getattr(self.device, "type", None) == "cuda"
+        autocast_context = (
+            torch.cuda.amp.autocast(device_type="cuda", dtype=torch.float16)
+            if use_autocast
+            else contextlib.nullcontext()
+        )
         with torch.no_grad():
-            features, patch_shapes = self._embed(images,
-                                                 provide_patch_shapes=True, 
-                                                 evaluation=True)
-            if self.pre_proj > 0:
-                features = self.pre_projection(features)
+            with autocast_context:
+                features, patch_shapes = self._embed(images,
+                                                     provide_patch_shapes=True,
+                                                     evaluation=True)
+                if self.pre_proj > 0:
+                    features = self.pre_projection(features)
 
-            # features = features.cpu().numpy()
-            # features = np.ascontiguousarray(features.cpu().numpy())
-            patch_scores = image_scores = -self.discriminator(features)
+                patch_scores = image_scores = -self.discriminator(features)
 
-            image_scores = self.patch_maker.unpatch_scores(
-                image_scores, batchsize=batchsize
-            )
-            image_scores = image_scores.reshape(*image_scores.shape[:2], -1)
-            image_scores = self.patch_maker.score(image_scores)
+                image_scores = self.patch_maker.unpatch_scores(
+                    image_scores, batchsize=batchsize
+                )
+                image_scores = image_scores.reshape(*image_scores.shape[:2], -1)
+                image_scores = self.patch_maker.score(image_scores)
 
-            patch_scores = self.patch_maker.unpatch_scores(
-                patch_scores, batchsize=batchsize
-            )
-            scales = patch_shapes[0]
-            patch_scores = patch_scores.reshape(batchsize, scales[0], scales[1])
-            features = features.reshape(batchsize, scales[0], scales[1], -1)
-            masks, features = self.anomaly_segmentor.convert_to_segmentation(patch_scores, features)
+                patch_scores = self.patch_maker.unpatch_scores(
+                    patch_scores, batchsize=batchsize
+                )
+                scales = patch_shapes[0]
+                patch_scores = patch_scores.reshape(batchsize, scales[0], scales[1])
+                features = features.reshape(batchsize, scales[0], scales[1], -1)
+                masks, features = self.anomaly_segmentor.convert_to_segmentation(patch_scores, features)
 
         image_scores = image_scores.detach().cpu().numpy()
         return list(image_scores), list(masks), list(features)
