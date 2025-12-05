@@ -674,7 +674,7 @@ class SimpleNet(torch.nn.Module):
         self.discriminator.eval()
         use_autocast = torch.cuda.is_available() and getattr(self.device, "type", None) == "cuda"
         autocast_context = (
-            torch.cuda.amp.autocast(device_type="cuda", dtype=torch.float16)
+            torch.cuda.amp.autocast(enabled=True, dtype=torch.float16)
             if use_autocast
             else contextlib.nullcontext()
         )
