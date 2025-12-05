@@ -358,6 +358,10 @@ def dataset(
             if subdataset is not None:
                 train_dataloader.name += "_" + subdataset
 
+            # Mirror the training dataloader's name on validation/testing loaders
+            # so inference code can consistently reference the dataset identifier.
+            test_dataloader.name = train_dataloader.name
+
             if train_val_split < 1:
                 val_dataset = dataset_library.__dict__[dataset_info[1]](
                     data_path,
@@ -377,6 +381,7 @@ def dataset(
                     prefetch_factor=4,
                     pin_memory=True,
                 )
+                val_dataloader.name = train_dataloader.name
             else:
                 val_dataloader = None
             dataloader_dict = {

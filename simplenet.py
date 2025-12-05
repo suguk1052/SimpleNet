@@ -626,7 +626,7 @@ class SimpleNet(torch.nn.Module):
 
         if torch.cuda.is_available():
             torch.cuda.synchronize()
-        start_time = time.time()
+        inference_time = 0.0
 
         total_images = 0
 
@@ -639,15 +639,18 @@ class SimpleNet(torch.nn.Module):
                     image = data["image"]
                     img_paths.extend(data['image_path'])
                     total_images += image.shape[0]
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                batch_start = time.time()
                 _scores, _masks, _feats = self._predict(image)
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+                inference_time += time.time() - batch_start
                 for score, mask, feat, is_anomaly in zip(_scores, _masks, _feats, data["is_anomaly"].numpy().tolist()):
                     scores.append(score)
                     masks.append(mask)
 
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        elapsed = time.time() - start_time
-        fps = total_images / elapsed if elapsed > 0 else 0
+        fps = total_images / inference_time if inference_time > 0 else 0
 
         return scores, masks, features, labels_gt, masks_gt, fps
 
