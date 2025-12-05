@@ -624,7 +624,9 @@ class SimpleNet(torch.nn.Module):
         masks_gt = []
         from sklearn.manifold import TSNE
 
-        use_cuda_timer = torch.cuda.is_available()
+        use_cuda_timer = (
+            torch.cuda.is_available() and getattr(self.device, "type", None) == "cuda"
+        )
         inference_time = 0.0
 
         total_images = 0
@@ -639,14 +641,16 @@ class SimpleNet(torch.nn.Module):
                     img_paths.extend(data['image_path'])
                     total_images += image.shape[0]
                 if use_cuda_timer:
-                    start_event = torch.cuda.Event(enable_timing=True)
-                    end_event = torch.cuda.Event(enable_timing=True)
-                    start_event.record()
+                    with torch.cuda.device(self.device):
+                        start_event = torch.cuda.Event(enable_timing=True)
+                        end_event = torch.cuda.Event(enable_timing=True)
+                        start_event.record()
                 else:
                     batch_start = time.time()
                 _scores, _masks, _feats = self._predict(image)
                 if use_cuda_timer:
                     end_event.record()
+                    end_event.synchronize()
                     inference_time += start_event.elapsed_time(end_event) / 1000.0
                 else:
                     inference_time += time.time() - batch_start
