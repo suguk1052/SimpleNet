@@ -624,8 +624,7 @@ class SimpleNet(torch.nn.Module):
         masks_gt = []
         from sklearn.manifold import TSNE
 
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
+        use_cuda_timer = torch.cuda.is_available()
         inference_time = 0.0
 
         total_images = 0
@@ -639,13 +638,18 @@ class SimpleNet(torch.nn.Module):
                     image = data["image"]
                     img_paths.extend(data['image_path'])
                     total_images += image.shape[0]
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                batch_start = time.time()
+                if use_cuda_timer:
+                    start_event = torch.cuda.Event(enable_timing=True)
+                    end_event = torch.cuda.Event(enable_timing=True)
+                    start_event.record()
+                else:
+                    batch_start = time.time()
                 _scores, _masks, _feats = self._predict(image)
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-                inference_time += time.time() - batch_start
+                if use_cuda_timer:
+                    end_event.record()
+                    inference_time += start_event.elapsed_time(end_event) / 1000.0
+                else:
+                    inference_time += time.time() - batch_start
                 for score, mask, feat, is_anomaly in zip(_scores, _masks, _feats, data["is_anomaly"].numpy().tolist()):
                     scores.append(score)
                     masks.append(mask)
@@ -673,8 +677,6 @@ class SimpleNet(torch.nn.Module):
             # features = features.cpu().numpy()
             # features = np.ascontiguousarray(features.cpu().numpy())
             patch_scores = image_scores = -self.discriminator(features)
-            patch_scores = patch_scores.cpu().numpy()
-            image_scores = image_scores.cpu().numpy()
 
             image_scores = self.patch_maker.unpatch_scores(
                 image_scores, batchsize=batchsize
@@ -690,6 +692,7 @@ class SimpleNet(torch.nn.Module):
             features = features.reshape(batchsize, scales[0], scales[1], -1)
             masks, features = self.anomaly_segmentor.convert_to_segmentation(patch_scores, features)
 
+        image_scores = image_scores.detach().cpu().numpy()
         return list(image_scores), list(masks), list(features)
 
     @staticmethod

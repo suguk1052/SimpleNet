@@ -2,7 +2,6 @@ import copy
 from typing import List
 
 import numpy as np
-import scipy.ndimage as ndimage
 import torch
 import torch.nn.functional as F
 
@@ -89,8 +88,21 @@ class RescaleSegmentor:
             _scores = F.interpolate(
                 _scores, size=self.target_size, mode="bilinear", align_corners=False
             )
+
+            kernel_size = int(2 * round(3 * self.smoothing) + 1)
+            coords = (
+                torch.arange(kernel_size, device=self.device, dtype=_scores.dtype)
+                - kernel_size // 2
+            )
+            yy, xx = torch.meshgrid(coords, coords, indexing="ij")
+            gaussian_kernel = torch.exp(-(xx**2 + yy**2) / (2 * self.smoothing**2))
+            gaussian_kernel = gaussian_kernel / gaussian_kernel.sum()
+            gaussian_kernel = gaussian_kernel.unsqueeze(0).unsqueeze(0)
+
+            _scores = F.conv2d(
+                _scores, gaussian_kernel, padding=kernel_size // 2, groups=1
+            )
             _scores = _scores.squeeze(1)
-            patch_scores = _scores.cpu().numpy()
 
             if isinstance(features, np.ndarray):
                 features = torch.from_numpy(features)
@@ -110,13 +122,12 @@ class RescaleSegmentor:
                 features = F.interpolate(
                     features, size=self.target_size, mode="bilinear", align_corners=False
                 )
-            features = features.cpu().numpy()
 
         return [
-            ndimage.gaussian_filter(patch_score, sigma=self.smoothing)
-            for patch_score in patch_scores
-        ], [ 
-            feature
+            score.detach().cpu().numpy()
+            for score in _scores
+        ], [
+            feature.detach().cpu().numpy()
             for feature in features
         ]
 
